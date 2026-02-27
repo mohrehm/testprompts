@@ -1,0 +1,437 @@
+Yes — we can set up that **exact pipeline in Cursor** using a mix of:
+
+*   **Saved prompts (“Commands”)** to trigger the workflow quickly [\[cursor.com\]](https://cursor.com/docs/context/commands)
+*   **Skills** to store your repeatable procedures/checklists in a version-controlled way [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/), [\[cursor.com\]](https://cursor.com/docs/context/rules)
+*   **Subagents/personas** to isolate context + delegate specialized work [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration), [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/)
+*   **MCP tooling** to call your local PowerPoint MCP server in the final step [\[cursor.com\]](https://cursor.com/docs/context/mcp), [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+*   **Optional sandbox allowlisting** so web research is controlled/defensible (important with your private endpoint/VNet mindset) [\[cursor.com\]](https://cursor.com/docs/agent/terminal)
+
+Below is a **copy/paste** setup plan that matches your 6-step flow.
+
+***
+
+# 0) One-time prerequisites (PowerPoint MCP server available to Cursor)
+
+## 0.1 Configure the PPTX MCP server in Cursor via `mcp.json`
+
+Cursor supports MCP servers via **stdio (local)** and HTTP/SSE (remote), and you configure custom servers in a JSON file (`mcp.json`). [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+
+Create **project-level** config at:
+
+```text
+<your-repo>/.cursor/mcp.json
+```
+
+Use a stdio-style config (example pattern shown in Cursor docs). [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+
+**Template (adjust command/args to your repo):**
+
+```jsonc
+{
+  "mcpServers": {
+    "pptxLocal": {
+      "command": "python",
+      "args": ["-m", "office_powerpoint_mcp_server"],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
+```
+
+*   Cursor MCP config supports local servers using `command` + `args` and remote servers using `url` + headers. [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+*   Cursor MCP supports tools/prompts/resources/roots/etc. so your PPTX server tools will show up in Agent tool selection when enabled. [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+
+### Enable/disable the MCP server on demand
+
+Cursor has built-in slash commands for MCP management (enable/disable/list). [\[cursor.com\]](https://cursor.com/docs/cli/reference/slash-commands)
+
+*   Enable: `/mcp enable pptxLocal` [\[cursor.com\]](https://cursor.com/docs/cli/reference/slash-commands)
+*   Disable: `/mcp disable pptxLocal` [\[cursor.com\]](https://cursor.com/docs/cli/reference/slash-commands)
+*   Browse/list: `/mcp list` [\[cursor.com\]](https://cursor.com/docs/cli/reference/slash-commands)
+
+***
+
+## 0.2 (Optional but recommended) Lock down network usage for research
+
+Cursor’s agent terminal can run in a **sandbox** with **network denied by default**, configurable via `.cursor/sandbox.json`. [\[cursor.com\]](https://cursor.com/docs/agent/terminal)
+
+If you want research to only hit Microsoft Learn + a couple allowed domains, create:
+
+```text
+<your-repo>/.cursor/sandbox.json
+```
+
+Example allowlist pattern: [\[cursor.com\]](https://cursor.com/docs/agent/terminal)
+
+```json
+{
+  "networkPolicy": {
+    "default": "deny",
+    "allow": [
+      "learn.microsoft.com",
+      "*.learn.microsoft.com",
+      "github.com",
+      "*.githubusercontent.com"
+    ]
+  }
+}
+```
+
+This matches your “private-by-default” posture while still allowing controlled research. [\[cursor.com\]](https://cursor.com/docs/agent/terminal)
+
+***
+
+# 1) Repo structure for your workflow artifacts
+
+Create these folders:
+
+```text
+docs/
+  architecture/                # your locally stored architectural docs
+artifacts/
+  research/
+  security/
+  deck/
+.cursor/
+  agents/
+  skills/
+  commands/
+  rules/
+```
+
+Why: You want predictable file paths so subagents can read/write consistently, and skills/rules/commands can be version-controlled in the repo. [\[cursor.com\]](https://cursor.com/docs/context/rules), [\[cursor.com\]](https://cursor.com/docs/context/commands)
+
+***
+
+# 2) Define the “pipeline contract” (Rule: always apply)
+
+Create: `.cursor/rules/pipeline.mdc`
+
+Rules provide persistent system-level instructions included in agent context and can be set to “always apply.” [\[cursor.com\]](https://cursor.com/docs/context/rules)
+
+```md
+---
+description: "Always follow the Research → Validate → Security → Deck → PPTX pipeline when asked to research a topic."
+alwaysApply: true
+---
+
+# Pipeline Rule (Always On)
+
+When the user asks for research or a presentation:
+1) Create/update `artifacts/research/research.md`
+2) Validate & refine research using reputable sources + check local architecture docs under `docs/architecture/**`
+3) Create/update `artifacts/security/securityassessment.md`
+4) Create/update `artifacts/deck/presentation.md`
+5) If PPTX requested, use MCP server `pptxLocal` to generate `artifacts/deck/presentation.pptx`
+
+File conventions:
+- Use headings, bullets, and links.
+- Preserve a “Known gotchas” section.
+- Always include an “Assumptions” section if any detail is missing.
+```
+
+This gives the “main agent” a persistent expectation of the workflow. [\[cursor.com\]](https://cursor.com/docs/context/rules)
+
+***
+
+# 3) Skills (procedural playbooks you’ll reuse)
+
+Skills are stored as folders containing `SKILL.md` and are auto-discovered by Cursor from `.cursor/skills/`. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/), [\[code.visua...studio.com\]](https://code.visualstudio.com/docs/copilot/agents/subagents)
+
+> **Note:** Cursor subagents start with a clean context window and won’t automatically inherit everything, so we’ll explicitly instruct subagents to read the relevant SKILL.md file when needed. Subagents start fresh and only get what the parent passes them. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+
+Create these skill folders:
+
+```text
+.cursor/skills/mslearn-research/SKILL.md
+.cursor/skills/validate-and-gotchas/SKILL.md
+.cursor/skills/security-assessment/SKILL.md
+.cursor/skills/deck-authoring/SKILL.md
+.cursor/skills/pptx-generation/SKILL.md
+```
+
+### Example SKILL.md (mslearn-research)
+
+```md
+---
+name: mslearn-research
+description: "Gather authoritative info from Microsoft Learn for a topic. Use when user requests research, best practices, or implementation guidance."
+---
+
+# MS Learn Research Skill
+
+## Goal
+Produce a thorough `artifacts/research/research.md` using Microsoft Learn as primary sources.
+
+## Steps
+1) Identify the specific product area, version, and scenario boundaries.
+2) Search Microsoft Learn for relevant articles and official guidance.
+3) Extract key concepts, supported patterns, limitations, and prerequisites.
+4) Write results with links and short summaries.
+5) End with: Assumptions, Open Questions, and Next Steps.
+
+## Output
+Update or create `artifacts/research/research.md`.
+```
+
+(Repeat similarly for the other skills: validation/gotchas, security assessment, deck authoring, pptx generation.) Skills are meant for task-specific workflows and are better than always-on rules for “how-to” procedures. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/), [\[code.visua...studio.com\]](https://code.visualstudio.com/docs/copilot/agents/subagents)
+
+***
+
+# 4) Subagents / personas (your delegated specialists)
+
+Cursor subagents:
+
+*   run in their own context window (isolation) [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+*   can be custom-defined in `.cursor/agents/` as Markdown with YAML frontmatter [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+*   should be focused and single-responsibility for best results [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+
+Create these files:
+
+```text
+.cursor/agents/researcher-mslearn.md
+.cursor/agents/validator-gotchas.md
+.cursor/agents/security-reviewer.md
+.cursor/agents/deck-writer.md
+.cursor/agents/pptx-builder.md
+```
+
+## 4.1 Researcher subagent (Step 2)
+
+`.cursor/agents/researcher-mslearn.md`
+
+```md
+---
+name: researcher-mslearn
+description: "Deconstruct the user topic and gather authoritative guidance primarily from Microsoft Learn. Produce artifacts/research/research.md."
+model: inherit
+readonly: false
+---
+
+You are the MS Learn Researcher.
+
+Context rules:
+- Start by reading: .cursor/skills/mslearn-research/SKILL.md
+- Then deconstruct the topic into sub-questions.
+- Use Microsoft Learn as primary sources.
+- Save output to: artifacts/research/research.md
+
+Output requirements in research.md:
+- Summary
+- Key Concepts / Patterns
+- Step-by-step approach (high level)
+- Prerequisites / Limits
+- Links
+- Assumptions + Open Questions
+```
+
+Subagents start clean, so we explicitly point it to the skill file and output location. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration), [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/)
+
+## 4.2 Validator subagent (Step 3)
+
+`.cursor/agents/validator-gotchas.md`
+
+```md
+---
+name: validator-gotchas
+description: "Validate research using the broader internet (blogs/issues/comments) and check local architecture docs for conflicts. Update artifacts/research/research.md with gotchas."
+model: inherit
+readonly: false
+---
+
+You are the Validator & Gotchas Hunter.
+
+Instructions:
+1) Read: artifacts/research/research.md
+2) Read: .cursor/skills/validate-and-gotchas/SKILL.md
+3) Scan local architecture docs: docs/architecture/** (look for overlap/conflicts)
+4) Validate on the internet:
+   - Confirm what works in practice
+   - Collect common failure modes and 'gotchas'
+   - Note version-specific pitfalls and deprecated guidance
+5) Update artifacts/research/research.md:
+   - Add/expand "Gotchas & What People Trip Over"
+   - Add "Conflicts/Overlaps with Our Architecture"
+   - Adjust recommendations accordingly
+6) Preserve original Learn-based guidance, but annotate with real-world findings.
+```
+
+This matches your step 3 requirement of combining web validation + local doc constraints. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+
+## 4.3 Security subagent (Step 4)
+
+`.cursor/agents/security-reviewer.md`
+
+```md
+---
+name: security-reviewer
+description: "Perform security assessment of the approach and produce artifacts/security/securityassessment.md. Use for auth, networking, data access and compliance checks."
+model: inherit
+readonly: false
+---
+
+You are the Security Reviewer.
+
+Instructions:
+1) Read: artifacts/research/research.md
+2) Read: .cursor/skills/security-assessment/SKILL.md
+3) Produce: artifacts/security/securityassessment.md with:
+   - Threat model (assets, actors, trust boundaries)
+   - Data sensitivity / PII notes
+   - Identity & access recommendations
+   - Network controls (private endpoints, VNet, egress)
+   - Secrets management
+   - Logging/auditing considerations
+   - Actionable checklist + risks by severity
+```
+
+Subagents are ideal for specialized expertise and independent verification. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+
+## 4.4 Deck writer subagent (Step 5)
+
+`.cursor/agents/deck-writer.md`
+
+```md
+---
+name: deck-writer
+description: "Convert research.md into a slide-by-slide presentation outline. Output artifacts/deck/presentation.md."
+model: inherit
+readonly: false
+---
+
+You are the Deck Writer.
+
+Instructions:
+1) Read: artifacts/research/research.md
+2) Read: artifacts/security/securityassessment.md (if exists)
+3) Read: .cursor/skills/deck-authoring/SKILL.md
+4) Create: artifacts/deck/presentation.md with:
+   - Slide 1: Title + objective
+   - Slide 2: Problem/Context
+   - Slide 3-4: Proposed Approach
+   - Slide 5: Architecture / Flow
+   - Slide 6: Gotchas + Lessons
+   - Slide 7: Security Summary
+   - Slide 8: Next steps
+Each slide must include: title, bullets, and speaker notes.
+```
+
+## 4.5 PPTX builder subagent (Step 6)
+
+`.cursor/agents/pptx-builder.md`
+
+```md
+---
+name: pptx-builder
+description: "Use pptxLocal MCP server tools to generate a PPTX from artifacts/deck/presentation.md. Output artifacts/deck/presentation.pptx."
+model: inherit
+readonly: false
+---
+
+You are the PPTX Builder.
+
+Instructions:
+1) Ensure MCP server 'pptxLocal' is enabled.
+2) Read: artifacts/deck/presentation.md
+3) Read: .cursor/skills/pptx-generation/SKILL.md
+4) Use the pptxLocal MCP tools to:
+   - Create a new PPTX
+   - Add slides per presentation.md
+   - Apply consistent layout (title + content)
+   - Save to: artifacts/deck/presentation.pptx
+5) Report: file path + what was generated.
+```
+
+Cursor MCP is specifically designed to connect Cursor to external tools via stdio/HTTP servers, so this is exactly where MCP shines. [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+
+***
+
+# 5) Saved prompt (“Command”) to run the whole pipeline in one shot
+
+Cursor Commands are reusable workflows stored as Markdown files in `.cursor/commands/` and invoked by typing `/` in chat. [\[cursor.com\]](https://cursor.com/docs/context/commands), [\[cursor.com\]](https://cursor.com/docs/context/commands)
+
+Create: `.cursor/commands/research-to-pptx.md`
+
+```md
+# Research → Validate → Security → Deck → PPTX Pipeline
+
+You are the orchestrator.
+
+## Input
+The user will provide a topic. If missing details, ask ONLY the minimum clarifying questions.
+
+## Workflow (must execute in order)
+1) Run subagent: /researcher-mslearn
+   - Goal: create or update artifacts/research/research.md
+
+2) Run subagent: /validator-gotchas
+   - Goal: update artifacts/research/research.md with real-world gotchas and architecture conflicts
+
+3) Run subagent: /security-reviewer
+   - Goal: create artifacts/security/securityassessment.md
+
+4) Run subagent: /deck-writer
+   - Goal: create artifacts/deck/presentation.md
+
+5) Run subagent: /pptx-builder
+   - Goal: create artifacts/deck/presentation.pptx using pptxLocal MCP server
+
+## Output
+At the end, provide:
+- Links to each artifact created/updated
+- A short summary of findings
+- Any open questions / risks
+```
+
+Commands show up when you type `/` and make the workflow repeatable and sharable. [\[cursor.com\]](https://cursor.com/docs/context/commands), [\[cursor.com\]](https://cursor.com/docs/context/commands)
+
+***
+
+# 6) How you’ll actually use this (daily UX)
+
+1.  Enable PPTX MCP server (once per session if needed):
+    *   `/mcp enable pptxLocal` [\[cursor.com\]](https://cursor.com/docs/cli/reference/slash-commands)
+
+2.  Run the pipeline command:
+    *   Type `/research-to-pptx` and then add your topic:  
+        **“Best practices for updating Dataverse data from Azure Functions with private endpoints”**  
+        Commands accept extra text after the command name as input context. [\[cursor.com\]](https://cursor.com/docs/context/commands)
+
+3.  Watch the agent delegate:
+    *   Cursor subagents run isolated and report back results to the main agent. [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+
+***
+
+# 7) Small but important “gotchas” to design around
+
+## Subagents start “clean”
+
+Subagents do **not** inherit the full main conversation history; the parent must include relevant context or file references.   
+That’s why each subagent prompt explicitly says “read these files.” [\[learn.microsoft.com\]](https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration)
+
+## Local stdio servers must keep stdout clean
+
+For stdio-based MCP, the server must not write random text to stdout (protocol stream). MCP transport rules emphasize strict stdin/stdout message boundaries. [\[modelconte...tocol.info\]](https://modelcontextprotocol.info/specification/), [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+
+## Network controls matter for “internet validation”
+
+If you want validation but still keep a controlled security posture, Cursor sandbox can deny network by default and allow only specific domains (via sandbox.json). [\[cursor.com\]](https://cursor.com/docs/agent/terminal)
+
+***
+
+# Two questions so I can tailor the PPTX step perfectly
+
+1.  **What is the tool name / capability exposed by your PowerPoint MCP server?**  
+    (For example: `create_presentation`, `add_slide`, `save_pptx`, etc.)  
+    If you paste the tool list (or a screenshot), I’ll rewrite `pptx-builder.md` to call the *exact* tools correctly. [\[cursor.com\]](https://cursor.com/docs/context/mcp)
+
+2.  Do you want the generated PPTX to use a **theme/template** (corporate deck), or just default styling?  
+    (If you have a `.pptx` template, we can add “load template first” into the pptx-builder persona.)
+
+If you paste your PPTX MCP server’s tool list, I’ll deliver **ready-to-run** versions of:
+
+*   `pptx-builder.md`
+*   the `pptx-generation` skill
+*   and a sample run prompt that reliably produces a deck on the first try.
