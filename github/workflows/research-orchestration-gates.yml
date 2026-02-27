@@ -1,0 +1,62 @@
+name: Research Orchestration Gates
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  pipeline-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate pipeline contract
+        run: python .github/scripts/validate_research.py --stage pipeline
+
+  research-stage:
+    needs: pipeline-contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate research stage
+        run: python .github/scripts/validate_research.py --stage research
+
+  security-stage:
+    needs: research-stage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate security stage
+        run: python .github/scripts/validate_research.py --stage security
+
+  full-policy-gate:
+    needs: security-stage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate changed artifacts and coupling policy
+        run: python .github/scripts/validate_research.py --changed-only --base-ref origin/${{ github.base_ref }} --stage full
+

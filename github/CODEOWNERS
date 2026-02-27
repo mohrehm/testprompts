@@ -1,0 +1,9 @@
+# Core governance and pipeline owners
+/.github/ @your-org/platform-team
+/.vscode/ @your-org/platform-team
+
+# Research and security artifacts
+/artifacts/research/ @your-org/architecture-team
+/artifacts/security/ @your-org/security-team
+/docs/architecture/ @your-org/architecture-team
+

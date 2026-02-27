@@ -1,0 +1,16 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.eol": "\n",
+  "markdownlint.config": {
+    "MD013": false
+  },
+  "markdown.preview.breaks": true,
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "search.exclude": {
+    "**/.git": true,
+    "**/.cursor": false
+  }
+}

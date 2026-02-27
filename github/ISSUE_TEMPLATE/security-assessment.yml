@@ -1,0 +1,44 @@
+name: Security Assessment Request
+description: Request security assessment for a proposed architecture or implementation
+title: "[Security] <topic>"
+labels:
+  - security
+body:
+  - type: input
+    id: scope
+    attributes:
+      label: Scope
+      placeholder: Services, data flows, and trust boundaries in scope
+    validations:
+      required: true
+
+  - type: textarea
+    id: threat_model
+    attributes:
+      label: Threat model context
+      description: Known actors, assets, and constraints
+      placeholder: External threats, insider risk, compliance constraints
+    validations:
+      required: true
+
+  - type: textarea
+    id: required_outputs
+    attributes:
+      label: Required outputs
+      value: |
+        - Risk register by severity
+        - Mitigations and compensating controls
+        - Residual risks
+        - Security checklist
+        - References with source/access date/confidence
+    validations:
+      required: true
+
+  - type: input
+    id: artifact_path
+    attributes:
+      label: Target artifact path
+      value: artifacts/security/securityassessment.md
+    validations:
+      required: true
+

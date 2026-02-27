@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Orchestration (guided)",
+      "type": "shell",
+      "command": "powershell -ExecutionPolicy Bypass -File scripts/orchestrate.ps1",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Stage 1 - Research Validate",
+      "type": "shell",
+      "command": "python .github/scripts/validate_research.py --stage research",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Stage 3 - Security Validate",
+      "type": "shell",
+      "command": "python .github/scripts/validate_research.py --stage security",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Research Artifacts",
+      "type": "shell",
+      "command": "python .github/scripts/validate_research.py",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Changed Artifacts",
+      "type": "shell",
+      "command": "python .github/scripts/validate_research.py --changed-only --base-ref origin/main",
+      "problemMatcher": []
+    },
+    {
+      "label": "Markdown Lint",
+      "type": "shell",
+      "command": "npx markdownlint-cli \"**/*.md\"",
+      "problemMatcher": []
+    }
+  ]
+}
